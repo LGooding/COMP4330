@@ -52,7 +52,7 @@ package body Token_Ring is
             end Set_Parent_Task;
          or
             accept Handle_Token (Token : Character) do
-               -- Put_Line ("Sub-Task has received the token " & Character'Image (Token) & ". Processing and Sending to the next Node");
+               Put_Line ("Sub-Task has received the token " & Character'Image (Token) & ". Processing and Sending to the master Node");
                delay 1.0; -- simulate handling the token
                Local_Token := Token;
             end Handle_Token;
@@ -60,22 +60,5 @@ package body Token_Ring is
          end select;
       end loop;
    end Worker_Task;
-
-   Init_Node : Node;
-   self_address : Node_Ptr;
-
-begin
-   -- first initialise linked list, is presently not looping, why not?
-   for n in Task_Index loop
-      Init_Node.ID := n;
-      Init_Node.Next := nodes (n + 1)'Access;
-      Init_Node.Status_Worker := workers (n + 1)'Access;
-      nodes (n).Initialise (Init_Node);
-      self_address := nodes (n)'Access;
-      workers (n).Set_Parent_Task (self_address);
-   end loop;
-
-   nodes (0).Send_Token ('a');
-   nodes (1).Send_Token ('a'); -- doesn't even activate this, meaning that a task is being blocked indefinitely and is making a deadlock
 
 end Token_Ring;
