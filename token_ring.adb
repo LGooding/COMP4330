@@ -4,6 +4,7 @@
 
 pragma Initialize_Scalars;
 
+with Ada.Real_Time;       use Ada.Real_Time;
 with Ada.Text_IO;         use Ada.Text_IO;
 
 package body Token_Ring is
@@ -15,6 +16,7 @@ package body Token_Ring is
       Node_Id : Task_Index;
       Local_Data_Token : Data_Token_Type;
       Local_Status_Token : Status_Token_Type;
+      Start_Time, Finish_Time : Time;
 
    begin
       loop
@@ -28,9 +30,17 @@ package body Token_Ring is
             accept Receive_Status (Status_Token : Status_Token_Type) do
                Local_Status_Token := Status_Token;
                Put_Line ("Node" & Task_Index'Image (Node_Id) & " has received the STATUS token");
-               delay 0.1;
             end Receive_Status;
+
+            Start_Time := Clock; -- Clock is function def in Real-time package that returns the time.
+            delay 0.1; -- pretend like we're doing something
+            Finish_Time := Clock;
+
+            Put_Line ("Status token has been held by Node " & Task_Index'Image (Node_Id) & " for " & Duration'Image (To_Duration (Finish_Time - Start_Time)));
+
             Next_Node.all.Receive_Status (Local_Status_Token);
+            -- need to measure how long the node is holding onto the status token for
+            -- the delay of this should not be influenced by the data token processing
          or
             -- being sent a token from the previous node
             -- pass it off to the worker task
@@ -61,9 +71,10 @@ package body Token_Ring is
          or
             accept Handle_Token (Token : Data_Token_Type) do
                -- Put_Line ("Sub-Task has received the DATA token. Processing and returning to the parent node");
-               delay 0.5; -- simulate handling the token
                Local_Data_Token := Token;
             end Handle_Token;
+
+            delay 0.2; -- simulate handling the token
             Parent_Node.all.Receive_Data_Token (Local_Data_Token); -- .all is the dereference
          end select;
       end loop;
