@@ -2,6 +2,8 @@
 -- Liam M Gooding, 2015
 --
 
+with System;              use System;
+
 package Token_Ring is
 
    type Status_Token_Type is new Character; -- leave these as chars for the time being, cahnge to generic later
@@ -11,6 +13,7 @@ package Token_Ring is
 
    -- a task to receive the token messages, dispatches contents of token to worker task to handle
    task type Node_Task is
+      pragma Priority (Priority'First);
       entry Initialise (In_Node : Node);
       entry Receive_Status (Status_Token : Status_Token_Type);
       entry Send_Data (Data_Token : Data_Token_Type); -- called by another task to send the token to this node
@@ -21,6 +24,7 @@ package Token_Ring is
 
    -- a task to process the tokens away from the message handler
    task type Worker_Task is
+      pragma Priority (Priority'Last);
       entry Set_Parent_Task (Parent_Task : Node_Ptr);
       entry Handle_Token (Token : Data_Token_Type); -- called by Node_Task to send the token to this task for processing
    end Worker_Task;
