@@ -17,8 +17,11 @@ package body Token_Ring is
       Local_Data_Token : Data_Token_Type;
       Local_Status_Token : Status_Token_Type;
       Start_Time, Finish_Time : Time;
+      Interval : constant Duration := 0.1; -- seconds 
+      Next_Time : Time;
 
    begin
+      Next_Time := Clock + To_Time_Span (Interval);
       loop
          select
             accept Initialise (In_Node : Node) do
@@ -33,7 +36,8 @@ package body Token_Ring is
             end Receive_Status;
 
             Start_Time := Clock; -- Clock is function def in Real-time package that returns the time.
-            delay 0.1; -- pretend like we're doing something
+            delay until Next_Time; -- pretend like we're doing something
+            Next_Time := Clock + To_Time_Span (Interval);
             Finish_Time := Clock;
 
             Put_Line ("Status token has been held by Node " & Task_Index'Image (Node_Id) & " for " & Duration'Image (To_Duration (Finish_Time - Start_Time)));
@@ -62,7 +66,10 @@ package body Token_Ring is
    task body Worker_Task is
       Local_Data_Token : Data_Token_Type;
       Parent_Node : Node_Ptr;
+      Interval : constant Duration := 0.5; -- seconds 
+      Next_Time : Time;
    begin
+      Next_Time := Clock + To_Time_Span (Interval);
       loop
          select
             accept Set_Parent_Task (Parent_Task : Node_Ptr) do
@@ -73,8 +80,10 @@ package body Token_Ring is
                -- Put_Line ("Sub-Task has received the DATA token. Processing and returning to the parent node");
                Local_Data_Token := Token;
             end Handle_Token;
+            
+            delay until Next_Time; -- simulate handling the token
+            Next_Time := Clock + To_Time_Span (Interval);
 
-            delay 0.2; -- simulate handling the token
             Parent_Node.all.Receive_Data_Token (Local_Data_Token); -- .all is the dereference
          end select;
       end loop;
