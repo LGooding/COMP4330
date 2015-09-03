@@ -1,2 +1,3 @@
 # COMP4330
-Initial commit
+Do your own damn labs.
+
