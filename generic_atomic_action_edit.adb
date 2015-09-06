@@ -1,5 +1,5 @@
 --
--- Uwe R. Zimmer, Australia, 2013. Edited by Liam M. Gooding 2015
+-- Uwe R. Zimmer, Australia, 2013
 --
 
 with Ada.Real_Time;             use Ada.Real_Time;
@@ -30,10 +30,9 @@ package body Generic_Atomic_Action is
          Task_Id := Id;
       end Identify;
       loop
-         select 
-            -- block on check in, make sure all the tasks are ready
-            Monitor.Check_In (Task_Id);
-            -- do the atomic action.
+         select
+            -- call to an outside function that will block, will only unblock when it is time for an atomic action
+            Monitor.Start_Action;            -- do the atomic action.
             select
                Monitor.Failed;
 
@@ -90,13 +89,24 @@ package body Generic_Atomic_Action is
                end;
             end select;
          then abort
-            loop
-               delay 5.0; -- maybe change to an absolute delay
-               Put_Line ("Task: " & Parts_Enum'Image (Task_Id) & " is flipping burgers");
-            end loop;
+            delay 3.0; -- maybe change to an absolute delay
+            Put_Line ("Task: " & Parts_Enum'Image (Task_Id) & " is flipping burgers");
          end select;
       end loop;
    end Action_Task;
+
+   task type Sync_Task; -- a task to 
+
+   Atomic_Caller : Sync_Task;
+
+   task body Sync_Task is 
+   begin
+      for n in 1 .. 1_000_000_000 loop
+         null;
+      end loop;
+      Put_Line ("Sync_Task is calling for an atomic action!");
+      Monitor.Set_Ready;
+   end Sync_Task;
 
    procedure Perform is
 
@@ -108,19 +118,20 @@ package body Generic_Atomic_Action is
       declare
          Condition : Atomic_Condition;
       begin
-         loop
-            Atomic_Action.Monitor.Action_Result (Condition);
 
-            case Condition is
+         Atomic_Action.Monitor.Action_Result (Condition);
+
+         case Condition is
             when Succeeded          => null;
                -- Conditions which lead to an abort of the atomic action
                -- are re-raised here again to inform the outer process.
             when Late_Condition     => raise Late_Activation;
             when Time_Out_Condition => raise Time_Out;
             when Other_Exception    => raise Uncaught_Exception;
-            end case;
-         end loop;
+         end case;
+
       end;
+
    end Perform;
 
 end Generic_Atomic_Action;
