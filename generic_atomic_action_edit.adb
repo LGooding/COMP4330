@@ -42,10 +42,9 @@ package body Generic_Atomic_Action is
 
             then abort
 
-               -- Monitor.Check_In (Task_Id);
-
+               Monitor.Check_In (Task_Id);
                begin
-
+                  
                   declare
                      Min_Delay_Deadline : constant Time := Clock + Actions (Task_Id).Scope.Start_Delay_Min;
                      Max_Delay_Deadline : constant Time := Clock + Actions (Task_Id).Scope.Start_Delay_Max;
@@ -89,21 +88,20 @@ package body Generic_Atomic_Action is
                end;
             end select;
          then abort
-            delay 3.0; -- maybe change to an absolute delay
-            Put_Line ("Task: " & Parts_Enum'Image (Task_Id) & " is flipping burgers");
+               delay 2.0; -- maybe change to an absolute delay
+               Put_Line (Parts_Enum'Image (Task_Id) & " is idle");
          end select;
       end loop;
+
    end Action_Task;
 
-   task type Sync_Task; -- a task to 
+   task type Sync_Task; -- a task to
 
    Atomic_Caller : Sync_Task;
 
-   task body Sync_Task is 
+   task body Sync_Task is
    begin
-      for n in 1 .. 1_000_000_000 loop
-         null;
-      end loop;
+      delay 10.0;
       Put_Line ("Sync_Task is calling for an atomic action!");
       Monitor.Set_Ready;
    end Sync_Task;
