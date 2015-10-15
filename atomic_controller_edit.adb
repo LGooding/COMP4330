@@ -1,70 +1,90 @@
 --
--- Uwe R. Zimmer, Australia, 2013
+-- Liam M. Gooding, Australia 2015
 --
 
--- This generic monitor synchronizes the concurrent parts of
--- an atomic action and distributes a failure signal to all.
--- This monitor is used in conjunction with Generic_Atomic_Action.
+with Ada.Interrupts.Names;                use Ada.Interrupts.Names;
+with ANU_Base_Board.Com_Interface;        use ANU_Base_Board.Com_Interface;
+with Discovery_Board;                     use Discovery_Board;
+with Discovery_Board.LED_Interface;       use Discovery_Board.LED_Interface;
+with STM32F4;                             use type STM32F4.Bit, STM32F4.Bits_32;
+with STM32F4.Timers.Ops;                  use STM32F4.Timers.Ops;
+with STM32F4.Reset_and_clock_control.Ops; use STM32F4.Reset_and_clock_control.Ops;
+with STM32F4.Interrupts_and_Events.Ops;   use STM32F4.Interrupts_and_Events.Ops;
+with System;                              use System;
 
-package body Atomic_Controller is
+package body Generator_Controllers is
 
-   protected body Monitor is
+   protected Timer_Update with Interrupt_Priority => Interrupt_Priority'First is
 
-      entry Check_In (Task_Id : Task_Ids) when State = Checking_In is
+      function Current_State return Oscillator_State;
+
+   private
+      procedure Interrupt_Handler with Attach_Handler => TIM2_Interrupt;
+      pragma Unreferenced (Interrupt_Handler);
+
+      State     : Oscillator_State := Off;
+   end Timer_Update;
+
+   protected body Timer_Update is
+
+      function Current_State return Oscillator_State is (State);
+
+      procedure Interrupt_Handler is
 
       begin
-         if Check_List (Task_Id) = Is_In then
-            raise Repeated_Check_In;
+         if State = On then
+            Discovery_Board.LED_Interface.On (LED => Red);
+            Discovery_Board.LED_Interface.Off (LED => Green);
+            -- stop writing to all output pins
+            State := Off;
          else
-            Check_List (Task_Id) := Is_In;
-            if Check_List = Check_List_All_In then
-               State := All_Checked_In;
-            end if;
+            Discovery_Board.LED_Interface.Off (LED => Red);
+            Discovery_Board.LED_Interface.On (LED => Green);
+            -- write to all output pins
+            State := On;
          end if;
-      end Check_In;
+         STM32F4.Timers.Ops.Clear_Flag (No => 2, This_Flag => Update);
 
-      entry Fail (Condition : Atomic_Condition) when State = All_Checked_In is
+      end Interrupt_Handler;
 
-      begin
-         Final_Condition := Condition;
-      end Fail;
+   end Timer_Update;
 
-      entry Failed when Final_Condition /= Succeeded is
+   protected Incoming_Rising_Edge with Interrupt_Priority => Interrupt_Priority'First is
 
-      begin
-         null;
-      end Failed;
+   private
+      procedure Interrupt_Handler with Attach_Handler => EXTI9;
+      pragma Unreferenced (Interrupt_Handler);
+   end Incoming_Rising_Edge;
 
-      entry Check_Out (for Check_Out_Queue in Check_Out_State) (Task_Id : Task_Ids)
-      when State = Checking_Out
-        or else Check_Out (Check_Out_Queue)'Count = Task_List'Length is
+   protected body Incoming_Rising_Edge is
 
-      begin
-         State := Checking_Out;
-         Check_List (Task_Id) := Is_Out;
-         if Check_List = Check_List_All_Out then
-            State := Final;
-         end if;
-      end Check_Out;
+      procedure Interrupt_Handler is
+         -- flash com lights
+         ANU_Base_Board.LED_Interface.On (LED => 1); -- For COM port 1
 
-      entry Action_Result (Condition : out Atomic_Condition) when State = Final is
+      end Interrupt_Handler;
 
-      begin
-         Condition       := Final_Condition;
-         State           := Checking_In;
-         Final_Condition := Succeeded;
-      end Action_Result;
+   end Incoming_Rising_Edge;
 
-      entry Set_Ready is
-      begin
-         Ready_Flag := True;
-      end Set_Ready;
 
-      entry Start_Action when Ready_Flag = True is
-      begin
-         null;
-      end Start_Action;
+   function Current_Oscillator_State return Oscillator_State is (Timer_Update.Current_State);
 
-   end Monitor;
+   procedure Initialize is
 
-end Atomic_Controller;
+   begin
+
+      -- Setting up the Oscillator
+      STM32F4.Reset_and_clock_control.Ops.Enable (No => 2);
+      STM32F4.Timers.Ops.Enable (No => 2);
+      STM32F4.Timers.Ops.Set_Auto_Reload_32 (No => 2, Auto_Reload => 16_000_000); -- counting up is the default, need to change this, hear that the manual reccomends low prescaler value and high clock division
+      STM32F4.Timers.Ops.Enable (No  => 2, Int => Update); -- what interrupts are masked for this?
+
+      -- Setting up the COM Ports to receive and send signals
+      STM32F4.Interrupts_and_Events.Ops.Set_Interrupt_Source (Interrupt_No => 9, Port => B); -- just COM Port 1 for the time being
+
+
+   end Initialize;
+
+begin
+   Initialize;
+end Generator_Controllers;
