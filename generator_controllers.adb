@@ -7,13 +7,15 @@ with ANU_Base_Board.Com_Interface;                use ANU_Base_Board.Com_Interfa
 with ANU_Base_Board.LED_Interface;                use ANU_Base_Board.LED_Interface;
 with Discovery_Board;                             use Discovery_Board;
 with Discovery_Board.LED_Interface;               use Discovery_Board.LED_Interface;
-with STM32F4;                                     use type STM32F4.Bit, STM32F4.Bits_32;
+with STM32F4;                                     use STM32F4;
+with STM32F4.DMA_controller.Ops;                  use STM32F4.DMA_controller.Ops;
 with STM32F4.General_purpose_IOs;                 use STM32F4.General_purpose_IOs;
 with STM32F4.Timers.Ops;                          use STM32F4.Timers.Ops;
 with STM32F4.Reset_and_clock_control.Ops;         use STM32F4.Reset_and_clock_control.Ops;
 with STM32F4.Interrupts_and_Events.Ops;           use STM32F4.Interrupts_and_Events.Ops;
 with STM32F4.System_configuration_controller.Ops; use STM32F4.System_configuration_controller.Ops;
 with System;                                      use System;
+with System.Storage_Elements;                     use System.Storage_Elements;
 
 package body Generator_Controllers is
 
@@ -68,10 +70,17 @@ package body Generator_Controllers is
    protected body Input_Edge_Event is
 
       procedure Interrupt_Handler is
-         -- read the line to determine which port triggered the interrupt -> how?
+         -- read the com ports to determine which triggered the interrupt
          -- use left LED for transmit indication, right LED for receive
       begin
-         ANU_Base_Board.LED_Interface.On (LED => (1, Left)); -- For COM port 1
+         -- for port in COM_Ports
+         --  ANU_Base_Board.Com_Interface.Read (Port => port);
+        -- if port.rx is something then
+               -- do something... give or take actualyl working
+         -- ANU_Base_Board.LED_Interface.On (LED => (1, Left)); -- For COM port 1
+         --   end if;
+
+         null;
 
       end Interrupt_Handler;
 
@@ -81,13 +90,22 @@ package body Generator_Controllers is
 
    procedure Initialize is
 
+      Transfer_Waveform : Bit_Array := (0, 1);
+
+      Output_Signal_Addr : Bits_32 := Bits_32 (To_Integer (Transfer_Waveform'Address));
+
+      GPIOB_Addr : constant := 16#4002_0400#;
+      GPIO_ODR_Offset : constant := 16#0000_0014#;
+      COM_Port_1_Tx_Addr : Bits_32;
+
    begin
 
       -- Setting up the Oscillator
       STM32F4.Reset_and_clock_control.Ops.Enable (No => 2);
       STM32F4.Timers.Ops.Enable (No => 2);
       STM32F4.Timers.Ops.Set_Auto_Reload_32 (No => 2, Auto_Reload => 16_000_000); -- counting up is the default, need to change this, hear that the manual reccomends low prescaler value and high clock division
-      STM32F4.Timers.Ops.Enable (No => 2, Int => Update); -- what interrupts should be masked for this?
+      STM32F4.Timers.Ops.Enable (No => 2, Int => Update); -- timer update should be free from any other interrupts
+      STM32F4.Timers.Ops.Enable (No => 2, Int => Update_DMA); -- send DMA requests on update
 
       -- Enabling the GPIO ports attached to the COM Ports
       Enable (B);
@@ -102,17 +120,30 @@ package body Generator_Controllers is
       Set_Interrupt_Source (Interrupt_No => 11, Port => C);  -- COM Port 3
       Set_Interrupt_Source (Interrupt_No => 2,  Port => D);  -- COM Port 4
 
-      -- Need to know where falling edge is to give buffer area for inserting UART signal 
-      Set_Trigger (Line => 7,  Raising => Enable, Falling => Enable);
-      Set_Trigger (Line => 6,  Raising => Enable, Falling => Enable);
-      Set_Trigger (Line => 11, Raising => Enable, Falling => Enable);
-      Set_Trigger (Line => 2,  Raising => Enable, Falling => Enable);
+      -- Need to know where falling edge is to give buffer area for inserting UART signal -> for time being just test incoming edge
+      Set_Trigger (Line => 7,  Raising => Enable, Falling => Disable);
+      Set_Trigger (Line => 6,  Raising => Enable, Falling => Disable);
+      Set_Trigger (Line => 11, Raising => Enable, Falling => Disable);
+      Set_Trigger (Line => 2,  Raising => Enable, Falling => Disable);
 
-      -- Interrupts aren't masked so that they can stack, which is what I want... I think 
-      Masking (Line => 7,  State => Unmasked);
-      Masking (Line => 6,  State => Unmasked);
-      Masking (Line => 11, State => Unmasked);
-      Masking (Line => 2,  State => Unmasked);
+      -- Interrupts aren't masked so that they can stack, which is what I want... I think
+      Masking (Line => 7,  State => STM32F4.Unmasked);
+      Masking (Line => 6,  State => STM32F4.Unmasked);
+      Masking (Line => 11, State => STM32F4.Unmasked);
+      Masking (Line => 2,  State => STM32F4.Unmasked);
+
+      -- Configure DMAs
+      COM_Port_1_Tx_Addr := Bits_32 (GPIOB_Addr + GPIO_ODR_Offset);
+
+      Set_Peripheral_Address (DMA => 1, Stream => 7, Addr => COM_Port_1_Tx_Addr); -- for TIM2 Update
+      Set_Memory_0_Address (DMA => 1, Stream => 7, Addr => Output_Signal_Addr);
+      Configure (DMA                         => 1,
+                 Stream                      => 7,
+                 Stream_Enable               => Enable,
+                 Peripheral_flow_controller  => STM32F4.DMA_controller.Peripheral_Flowcontrol,
+                 Data_transfer_direction     => STM32F4.DMA_controller.Memory_to_Peripheral,
+                 Memory_increment_mode       => STM32F4.DMA_controller.Address_Incremented,
+                 Channel                     => 2#011#);
 
    end Initialize;
 
