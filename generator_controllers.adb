@@ -3,6 +3,7 @@
 --
 
 with Ada.Interrupts.Names;                        use Ada.Interrupts.Names;
+with ANU_Base_Board;                              use ANU_Base_Board;
 with ANU_Base_Board.Com_Interface;                use ANU_Base_Board.Com_Interface;
 with ANU_Base_Board.LED_Interface;                use ANU_Base_Board.LED_Interface;
 with Discovery_Board;                             use Discovery_Board;
@@ -16,6 +17,7 @@ with STM32F4.Interrupts_and_Events.Ops;           use STM32F4.Interrupts_and_Eve
 with STM32F4.System_configuration_controller.Ops; use STM32F4.System_configuration_controller.Ops;
 with System;                                      use System;
 with System.Storage_Elements;                     use System.Storage_Elements;
+with STM32F4.DMA_controller; use STM32F4.DMA_controller;
 
 package body Generator_Controllers is
 
@@ -41,11 +43,13 @@ package body Generator_Controllers is
             Discovery_Board.LED_Interface.On (LED => Red);
             Discovery_Board.LED_Interface.Off (LED => Green);
             -- stop writing to all output pins
+            ANU_Base_Board.LED_Interface.Off (LED => (1, L));
             State := Off;
          else
             Discovery_Board.LED_Interface.Off (LED => Red);
             Discovery_Board.LED_Interface.On (LED => Green);
             -- write to all output pins
+            ANU_Base_Board.LED_Interface.On (LED => (1, L));
             State := On;
          end if;
          STM32F4.Timers.Ops.Clear_Flag (No => 2, This_Flag => Update);
@@ -57,8 +61,12 @@ package body Generator_Controllers is
    protected Input_Edge_Event with Interrupt_Priority => Interrupt_Priority'First is
 
    private
-      procedure Interrupt_Handler with Attach_Handler => TIM;
+      procedure Interrupt_Handler;
       -- two of the COM Ports use the same external interrupt line :/ will this be a problem?
+       pragma Attach_Handler (Interrupt_Handler, EXTI9_5_Interrupt);   -- COM Port 1
+       pragma Attach_Handler (Interrupt_Handler, EXTI9_5_Interrupt);   -- COM Port 2
+       pragma Attach_Handler (Interrupt_Handler, EXTI15_10_Interrupt); -- COM Port 3
+       pragma Attach_Handler (Interrupt_Handler, EXTI15_10_Interrupt); -- COM Port 4 -- is this supposed to be the same?
 
       pragma Unreferenced (Interrupt_Handler);
    end Input_Edge_Event;
@@ -69,15 +77,15 @@ package body Generator_Controllers is
          -- read the com ports to determine which triggered the interrupt
          -- use left LED for transmit indication, right LED for receive
 
-         Rising_Edge_Timestamp  : Time;
-         Falling_Edge_Timestamp : Time;
-         
       begin
+
          -- for port in COM_Ports
          --  ANU_Base_Board.Com_Interface.Read (Port => port);
         -- if port.rx is something then
                -- do something... give or take actualyl working
-         -- ANU_Base_Board.LED_Interface.On (LED => (1, Left)); -- For COM port 1
+         ANU_Base_Board.LED_Interface.On (LED => (4, Right)); -- For COM port 1
+         ANU_Base_Board.LED_Interface.Off (LED => (4, Right)); -- For COM port 1
+
          --   end if;
 
          null;
@@ -90,13 +98,13 @@ package body Generator_Controllers is
 
    procedure Initialize is
 
-      Transfer_Waveform : Bit_Array := (0, 1);
+      Transfer_Waveform : Bits_16 := 2#1111_1111_1111_1111#;
 
       Output_Signal_Addr : Bits_32 := Bits_32 (To_Integer (Transfer_Waveform'Address));
 
-      GPIOB_Addr : constant := 16#4002_0400#;
+      GPIOD_Addr : constant := 16#4002_0C00#;
       GPIO_ODR_Offset : constant := 16#0000_0014#;
-      COM_Port_1_Tx_Addr : Bits_32;
+      COM_Port_4_Rx_Addr : Bits_32;
 
    begin
 
@@ -106,10 +114,6 @@ package body Generator_Controllers is
       STM32F4.Timers.Ops.Set_Auto_Reload_32 (No => 2, Auto_Reload => 16_000_000); -- counting up is the default, need to change this, hear that the manual reccomends low prescaler value and high clock division
       STM32F4.Timers.Ops.Enable (No => 2, Int => Update); -- timer update should be free from any other interrupts
       STM32F4.Timers.Ops.Enable (No => 2, Int => Update_DMA); -- send DMA requests on update
-
-      -- Setting up TIM9 to use as a timestamp on receiving inputs
-      STM32F4.Reset_and_clock_control (No => 9);
-      STM32F4.Timers.Ops.Enable (No => 9);
 
       -- Enabling the GPIO ports attached to the COM Ports
       Enable (B);
@@ -137,17 +141,20 @@ package body Generator_Controllers is
       Masking (Line => 2,  State => STM32F4.Unmasked);
 
       -- Configure DMAs
-      COM_Port_1_Tx_Addr := Bits_32 (GPIOB_Addr + GPIO_ODR_Offset);
+      COM_Port_4_Rx_Addr := Bits_32 (GPIOD_Addr + GPIO_ODR_Offset);
 
-      Set_Peripheral_Address (DMA => 1, Stream => 7, Addr => COM_Port_1_Tx_Addr); -- for TIM2 Update
+      Set_Peripheral_Address (DMA => 1, Stream => 7, Addr => COM_Port_4_Rx_Addr); -- for TIM2 Update
       Set_Memory_0_Address (DMA => 1, Stream => 7, Addr => Output_Signal_Addr);
+      Set_No_of_Transfers (DMA => 1, Stream => 7, No => 1);
       Configure (DMA                         => 1,
                  Stream                      => 7,
                  Stream_Enable               => Enable,
                  Peripheral_flow_controller  => STM32F4.DMA_controller.Peripheral_Flowcontrol,
                  Data_transfer_direction     => STM32F4.DMA_controller.Memory_to_Peripheral,
-                 Memory_increment_mode       => STM32F4.DMA_controller.Address_Incremented,
-                 Channel                     => 2#011#);
+                 Memory_increment_mode       => STM32F4.DMA_controller.Address_Fixed,
+                 Peripheral_data_size        => Half_Word_Size,
+                 Memory_data_size            => Half_Word_Size,
+                 Channel                     => 3);
 
    end Initialize;
 
