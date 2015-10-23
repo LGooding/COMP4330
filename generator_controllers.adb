@@ -57,12 +57,8 @@ package body Generator_Controllers is
    protected Input_Edge_Event with Interrupt_Priority => Interrupt_Priority'First is
 
    private
-      procedure Interrupt_Handler;
+      procedure Interrupt_Handler with Attach_Handler => TIM;
       -- two of the COM Ports use the same external interrupt line :/ will this be a problem?
-      pragma Attach_Handler (Interrupt_Handler, EXTI9_5_Interrupt);   -- COM Port 1
-      pragma Attach_Handler (Interrupt_Handler, EXTI9_5_Interrupt);   -- COM Port 2
-      pragma Attach_Handler (Interrupt_Handler, EXTI15_10_Interrupt); -- COM Port 3
-      pragma Attach_Handler (Interrupt_Handler, EXTI15_10_Interrupt); -- COM Port 3
 
       pragma Unreferenced (Interrupt_Handler);
    end Input_Edge_Event;
@@ -72,6 +68,10 @@ package body Generator_Controllers is
       procedure Interrupt_Handler is
          -- read the com ports to determine which triggered the interrupt
          -- use left LED for transmit indication, right LED for receive
+
+         Rising_Edge_Timestamp  : Time;
+         Falling_Edge_Timestamp : Time;
+         
       begin
          -- for port in COM_Ports
          --  ANU_Base_Board.Com_Interface.Read (Port => port);
@@ -106,6 +106,10 @@ package body Generator_Controllers is
       STM32F4.Timers.Ops.Set_Auto_Reload_32 (No => 2, Auto_Reload => 16_000_000); -- counting up is the default, need to change this, hear that the manual reccomends low prescaler value and high clock division
       STM32F4.Timers.Ops.Enable (No => 2, Int => Update); -- timer update should be free from any other interrupts
       STM32F4.Timers.Ops.Enable (No => 2, Int => Update_DMA); -- send DMA requests on update
+
+      -- Setting up TIM9 to use as a timestamp on receiving inputs
+      STM32F4.Reset_and_clock_control (No => 9);
+      STM32F4.Timers.Ops.Enable (No => 9);
 
       -- Enabling the GPIO ports attached to the COM Ports
       Enable (B);
