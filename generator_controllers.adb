@@ -18,6 +18,7 @@ with STM32F4.System_configuration_controller.Ops; use STM32F4.System_configurati
 with System;                                      use System;
 with System.Storage_Elements;                     use System.Storage_Elements;
 with STM32F4.DMA_controller; use STM32F4.DMA_controller;
+with STM32F4.Interrupts_and_Events; use STM32F4.Interrupts_and_Events;
 
 package body Generator_Controllers is
 
@@ -40,15 +41,15 @@ package body Generator_Controllers is
 
       begin
          if State = On then
-            Discovery_Board.LED_Interface.On (LED => Red);
             Discovery_Board.LED_Interface.Off (LED => Green);
             -- stop writing to all output pins
+            ANU_Base_Board.Com_Interface.Reset (Port => 1);
             ANU_Base_Board.LED_Interface.Off (LED => (1, L));
             State := Off;
          else
-            Discovery_Board.LED_Interface.Off (LED => Red);
             Discovery_Board.LED_Interface.On (LED => Green);
             -- write to all output pins
+            ANU_Base_Board.Com_Interface.Set (Port => 1);
             ANU_Base_Board.LED_Interface.On (LED => (1, L));
             State := On;
          end if;
@@ -59,6 +60,8 @@ package body Generator_Controllers is
    end Timer_Update;
 
    protected Input_Edge_Event with Interrupt_Priority => Interrupt_Priority'First is
+
+      function Get_Com_Port (Rx_Line : Lines) return Com_Ports;
 
    private
       procedure Interrupt_Handler;
@@ -73,22 +76,36 @@ package body Generator_Controllers is
 
    protected body Input_Edge_Event is
 
+      function Get_Com_Port (Rx_Line : Lines) return Com_Ports is 
+        (if Rx_Line = 7 then
+            Com_Ports (1)
+         elsif Rx_Line = 6 then
+            Com_Ports (2)
+         elsif Rx_Line = 11 then
+            Com_Ports (3)
+         else
+            Com_Ports (4)         
+         );
+
       procedure Interrupt_Handler is
          -- read the com ports to determine which triggered the interrupt
          -- use left LED for transmit indication, right LED for receive
+         Rx_Lines : array (Lines) of Lines := (7, 6, 11, 2);
+         C_Port   : Com_Ports;
+         IO_Port  : GPIO_Ports;
 
       begin
-
-         -- for port in COM_Ports
-         --  ANU_Base_Board.Com_Interface.Read (Port => port);
-        -- if port.rx is something then
-               -- do something... give or take actualyl working
-         ANU_Base_Board.LED_Interface.On (LED => (4, Right)); -- For COM port 1
-         ANU_Base_Board.LED_Interface.Off (LED => (4, Right)); -- For COM port 1
-
-         --   end if;
-
-         null;
+         for Input_Line of Rx_Lines loop
+            if Happened (Line => Input_Line) then
+               Clear_Interrupt (Line => Input_Line);
+               C_Port := Get_Com_Port (Rx_Line => Input_Line);
+               if ANU_Base_Board.Com_Interface.Read (Port => C_Port) = 1 then
+                  ANU_Base_Board.LED_Interface.On (LED => (C_Port, Right));
+               else
+                  ANU_Base_Board.LED_Interface.Off (LED => (C_Port, Right));
+               end if;
+            end if;
+         end loop;
 
       end Interrupt_Handler;
 
@@ -98,22 +115,13 @@ package body Generator_Controllers is
 
    procedure Initialize is
 
-      Transfer_Waveform : Bits_16 := 2#1111_1111_1111_1111#;
-
-      Output_Signal_Addr : Bits_32 := Bits_32 (To_Integer (Transfer_Waveform'Address));
-
-      GPIOD_Addr : constant := 16#4002_0C00#;
-      GPIO_ODR_Offset : constant := 16#0000_0014#;
-      COM_Port_4_Rx_Addr : Bits_32;
-
    begin
 
       -- Setting up the Oscillator
       STM32F4.Reset_and_clock_control.Ops.Enable (No => 2);
       STM32F4.Timers.Ops.Enable (No => 2);
-      STM32F4.Timers.Ops.Set_Auto_Reload_32 (No => 2, Auto_Reload => 16_000_000); -- counting up is the default, need to change this, hear that the manual reccomends low prescaler value and high clock division
+      STM32F4.Timers.Ops.Set_Auto_Reload_32 (No => 2, Auto_Reload => 42_000_000); -- counting up is the default, need to change this, hear that the manual reccomends low prescaler value and high clock division
       STM32F4.Timers.Ops.Enable (No => 2, Int => Update); -- timer update should be free from any other interrupts
-      STM32F4.Timers.Ops.Enable (No => 2, Int => Update_DMA); -- send DMA requests on update
 
       -- Enabling the GPIO ports attached to the COM Ports
       Enable (B);
@@ -139,22 +147,6 @@ package body Generator_Controllers is
       Masking (Line => 6,  State => STM32F4.Unmasked);
       Masking (Line => 11, State => STM32F4.Unmasked);
       Masking (Line => 2,  State => STM32F4.Unmasked);
-
-      -- Configure DMAs
-      COM_Port_4_Rx_Addr := Bits_32 (GPIOD_Addr + GPIO_ODR_Offset);
-
-      Set_Peripheral_Address (DMA => 1, Stream => 7, Addr => COM_Port_4_Rx_Addr); -- for TIM2 Update
-      Set_Memory_0_Address (DMA => 1, Stream => 7, Addr => Output_Signal_Addr);
-      Set_No_of_Transfers (DMA => 1, Stream => 7, No => 1);
-      Configure (DMA                         => 1,
-                 Stream                      => 7,
-                 Stream_Enable               => Enable,
-                 Peripheral_flow_controller  => STM32F4.DMA_controller.Peripheral_Flowcontrol,
-                 Data_transfer_direction     => STM32F4.DMA_controller.Memory_to_Peripheral,
-                 Memory_increment_mode       => STM32F4.DMA_controller.Address_Fixed,
-                 Peripheral_data_size        => Half_Word_Size,
-                 Memory_data_size            => Half_Word_Size,
-                 Channel                     => 3);
 
    end Initialize;
 
