@@ -9,14 +9,12 @@ with ANU_Base_Board.LED_Interface;                use ANU_Base_Board.LED_Interfa
 with Discovery_Board;                             use Discovery_Board;
 with Discovery_Board.LED_Interface;               use Discovery_Board.LED_Interface;
 with STM32F4;                                     use STM32F4;
-with STM32F4.DMA_controller.Ops;                  use STM32F4.DMA_controller.Ops;
 with STM32F4.General_purpose_IOs;                 use STM32F4.General_purpose_IOs;
 with STM32F4.Timers.Ops;                          use STM32F4.Timers.Ops;
 with STM32F4.Reset_and_clock_control.Ops;         use STM32F4.Reset_and_clock_control.Ops;
 with STM32F4.Interrupts_and_Events.Ops;           use STM32F4.Interrupts_and_Events.Ops;
 with STM32F4.System_configuration_controller.Ops; use STM32F4.System_configuration_controller.Ops;
 with System;                                      use System;
-with System.Storage_Elements;                     use System.Storage_Elements;
 with STM32F4.DMA_controller; use STM32F4.DMA_controller;
 with STM32F4.Interrupts_and_Events; use STM32F4.Interrupts_and_Events;
 
@@ -90,9 +88,9 @@ package body Generator_Controllers is
       procedure Interrupt_Handler is
          -- read the com ports to determine which triggered the interrupt
          -- use left LED for transmit indication, right LED for receive
-         Rx_Lines : array (Lines) of Lines := (7, 6, 11, 2);
+         type No_of_Rx_Lines is range 1 .. 4;
+         Rx_Lines : constant array (No_of_Rx_Lines) of Integer := (7, 6, 11, 2); -- this is triggering a constraint error
          C_Port   : Com_Ports;
-         IO_Port  : GPIO_Ports;
 
       begin
          for Input_Line of Rx_Lines loop
@@ -120,7 +118,7 @@ package body Generator_Controllers is
       -- Setting up the Oscillator
       STM32F4.Reset_and_clock_control.Ops.Enable (No => 2);
       STM32F4.Timers.Ops.Enable (No => 2);
-      STM32F4.Timers.Ops.Set_Auto_Reload_32 (No => 2, Auto_Reload => 42_000_000); -- counting up is the default, need to change this, hear that the manual reccomends low prescaler value and high clock division
+      STM32F4.Timers.Ops.Set_Auto_Reload_32 (No => 2, Auto_Reload => 48_000_000); -- counting up is the default, need to change this, hear that the manual reccomends low prescaler value and high clock division
       STM32F4.Timers.Ops.Enable (No => 2, Int => Update); -- timer update should be free from any other interrupts
 
       -- Enabling the GPIO ports attached to the COM Ports
@@ -137,10 +135,10 @@ package body Generator_Controllers is
       Set_Interrupt_Source (Interrupt_No => 2,  Port => D);  -- COM Port 4
 
       -- Need to know where falling edge is to give buffer area for inserting UART signal -> for time being just test incoming edge
-      Set_Trigger (Line => 7,  Raising => Enable, Falling => Disable);
-      Set_Trigger (Line => 6,  Raising => Enable, Falling => Disable);
-      Set_Trigger (Line => 11, Raising => Enable, Falling => Disable);
-      Set_Trigger (Line => 2,  Raising => Enable, Falling => Disable);
+      Set_Trigger (Line => 7,  Raising => Enable, Falling => Enable);
+      Set_Trigger (Line => 6,  Raising => Enable, Falling => Enable);
+      Set_Trigger (Line => 11, Raising => Enable, Falling => Enable);
+      Set_Trigger (Line => 2,  Raising => Enable, Falling => Enable);
 
       -- Interrupts aren't masked so that they can stack, which is what I want... I think
       Masking (Line => 7,  State => STM32F4.Unmasked);
