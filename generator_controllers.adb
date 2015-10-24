@@ -38,6 +38,7 @@ package body Generator_Controllers is
       procedure Interrupt_Handler is
 
       begin
+         STM32F4.Timers.Ops.Clear_Flag (No => 2, This_Flag => Update);
          if State = On then
             Discovery_Board.LED_Interface.Off (LED => Green);
             -- stop writing to all output pins
@@ -51,11 +52,45 @@ package body Generator_Controllers is
             ANU_Base_Board.LED_Interface.On (LED => (1, L));
             State := On;
          end if;
-         STM32F4.Timers.Ops.Clear_Flag (No => 2, This_Flag => Update);
-
       end Interrupt_Handler;
 
    end Timer_Update;
+
+   protected Timer_Update_2 with Interrupt_Priority => Interrupt_Priority'First is
+
+      function Current_State return Oscillator_State;
+
+   private
+      procedure Interrupt_Handler with Attach_Handler => TIM3_Interrupt;
+      pragma Unreferenced (Interrupt_Handler);
+
+      State     : Oscillator_State := Off;
+   end Timer_Update_2;
+
+   protected body Timer_Update_2 is
+
+      function Current_State return Oscillator_State is (State);
+
+      procedure Interrupt_Handler is
+
+      begin
+         if State = On then
+            Discovery_Board.LED_Interface.Off (LED => Green);
+            -- stop writing to all output pins
+            ANU_Base_Board.Com_Interface.Reset (Port => 3);
+            ANU_Base_Board.LED_Interface.Off (LED => (3, L));
+            State := Off;
+         else
+            Discovery_Board.LED_Interface.On (LED => Green);
+            -- write to all output pins
+            ANU_Base_Board.Com_Interface.Set (Port => 3);
+            ANU_Base_Board.LED_Interface.On (LED => (3, L));
+            State := On;
+         end if;
+         STM32F4.Timers.Ops.Clear_Flag (No => 3, This_Flag => Update);
+      end Interrupt_Handler;
+
+   end Timer_Update_2;
 
    protected Input_Edge_Event with Interrupt_Priority => Interrupt_Priority'First is
 
@@ -74,7 +109,7 @@ package body Generator_Controllers is
 
    protected body Input_Edge_Event is
 
-      function Get_Com_Port (Rx_Line : Lines) return Com_Ports is 
+      function Get_Com_Port (Rx_Line : Lines) return Com_Ports is
         (if Rx_Line = 7 then
             Com_Ports (1)
          elsif Rx_Line = 6 then
@@ -82,7 +117,7 @@ package body Generator_Controllers is
          elsif Rx_Line = 11 then
             Com_Ports (3)
          else
-            Com_Ports (4)         
+            Com_Ports (4)
          );
 
       procedure Interrupt_Handler is
@@ -95,13 +130,13 @@ package body Generator_Controllers is
       begin
          for Input_Line of Rx_Lines loop
             if Happened (Line => Input_Line) then
-               Clear_Interrupt (Line => Input_Line);
                C_Port := Get_Com_Port (Rx_Line => Input_Line);
-               if ANU_Base_Board.Com_Interface.Read (Port => C_Port) = 1 then
+               if ANU_Base_Board.Com_Interface.Read (Port => C_Port) = Bit (1) then
                   ANU_Base_Board.LED_Interface.On (LED => (C_Port, Right));
                else
                   ANU_Base_Board.LED_Interface.Off (LED => (C_Port, Right));
                end if;
+               Clear_Interrupt (Line => Input_Line);
             end if;
          end loop;
 
@@ -114,12 +149,6 @@ package body Generator_Controllers is
    procedure Initialize is
 
    begin
-
-      -- Setting up the Oscillator
-      STM32F4.Reset_and_clock_control.Ops.Enable (No => 2);
-      STM32F4.Timers.Ops.Enable (No => 2);
-      STM32F4.Timers.Ops.Set_Auto_Reload_32 (No => 2, Auto_Reload => 48_000_000); -- counting up is the default, need to change this, hear that the manual reccomends low prescaler value and high clock division
-      STM32F4.Timers.Ops.Enable (No => 2, Int => Update); -- timer update should be free from any other interrupts
 
       -- Enabling the GPIO ports attached to the COM Ports
       Enable (B);
@@ -145,6 +174,18 @@ package body Generator_Controllers is
       Masking (Line => 6,  State => STM32F4.Unmasked);
       Masking (Line => 11, State => STM32F4.Unmasked);
       Masking (Line => 2,  State => STM32F4.Unmasked);
+
+      -- Setting up Oscillator 1
+      STM32F4.Reset_and_clock_control.Ops.Enable (No => 2);
+      STM32F4.Timers.Ops.Enable (No => 2);
+      STM32F4.Timers.Ops.Set_Auto_Reload_32 (No => 2, Auto_Reload => 48_000_000); -- counting up is the default, need to change this, hear that the manual reccomends low prescaler value and high clock division
+      STM32F4.Timers.Ops.Enable (No => 2, Int => Update); -- timer update should be free from any other interrupts
+
+      -- Setting up Oscillator 2 (for testing purposes)
+      STM32F4.Reset_and_clock_control.Ops.Enable (No => 3);
+      STM32F4.Timers.Ops.Enable (No => 3);
+      STM32F4.Timers.Ops.Set_Auto_Reload_32 (No => 3, Auto_Reload => 62_000_000);
+      STM32F4.Timers.Ops.Enable (No => 3, Int => Update);
 
    end Initialize;
 
