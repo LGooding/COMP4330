@@ -75,13 +75,13 @@ package body Generator_Controllers is
 
       begin
          if State = On then
-            Discovery_Board.LED_Interface.Off (LED => Green);
+            Discovery_Board.LED_Interface.Off (LED => Red);
             -- stop writing to all output pins
             ANU_Base_Board.Com_Interface.Reset (Port => 3);
             ANU_Base_Board.LED_Interface.Off (LED => (3, L));
             State := Off;
          else
-            Discovery_Board.LED_Interface.On (LED => Green);
+            Discovery_Board.LED_Interface.On (LED => Red);
             -- write to all output pins
             ANU_Base_Board.Com_Interface.Set (Port => 3);
             ANU_Base_Board.LED_Interface.On (LED => (3, L));
@@ -184,8 +184,9 @@ package body Generator_Controllers is
       -- Setting up Oscillator 2 (for testing purposes)
       STM32F4.Reset_and_clock_control.Ops.Enable (No => 3);
       STM32F4.Timers.Ops.Enable (No => 3);
-      STM32F4.Timers.Ops.Set_Auto_Reload_32 (No => 3, Auto_Reload => 62_000_000);
+      STM32F4.Timers.Ops.Set_Auto_Reload_32 (No => 3, Auto_Reload => 64_000_000);
       STM32F4.Timers.Ops.Enable (No => 3, Int => Update);
+      STM32F4.Timers.Ops.Generate (No => 3, This_Event => Update);
 
    end Initialize;
 
