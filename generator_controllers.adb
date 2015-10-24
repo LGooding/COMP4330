@@ -185,6 +185,7 @@ package body Generator_Controllers is
       STM32F4.Reset_and_clock_control.Ops.Enable (No => 3);
       STM32F4.Timers.Ops.Enable (No => 3);
       STM32F4.Timers.Ops.Set_Auto_Reload_32 (No => 3, Auto_Reload => 64_000_000);
+      STM32F4.Timers.Ops.Set_Prescaler (No => 3, Prescaler => 1024);
       STM32F4.Timers.Ops.Enable (No => 3, Int => Update);
       STM32F4.Timers.Ops.Generate (No => 3, This_Event => Update);
 
